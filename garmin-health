@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+from datetime import datetime
+
+from garminconnect import Garmin
+
+TOKENS = os.path.expanduser("~/.config/garmin-health/tokens")
+TODAY = datetime.now().strftime("%Y-%m-%d")
+
+
+def latest_value(values, index=1):
+    if not values:
+        return None
+    for row in reversed(values):
+        if not isinstance(row, (list, tuple)) or len(row) <= index:
+            continue
+        val = row[index]
+        if val:
+            return row[0], val
+    return None
+
+
+def minutes_ago(ts):
+    if not ts:
+        return "?"
+    ts = ts / 1000 if ts > 1e11 else ts
+    age = (datetime.now().timestamp() - ts) / 60
+    return f"{int(age)}m ago" if age < 90 else f"{age / 60:.1f}h ago"
+
+
+def out(payload):
+    print(json.dumps(payload, ensure_ascii=False))
+    sys.exit(0)
+
+
+def main() -> None:
+    api = Garmin("", "")
+    try:
+        api.login(tokenstore=TOKENS)
+    except Exception as e:
+        out({"text": "\uf21e —", "tooltip": f"Garmin auth failed: {e}"})
+
+    try:
+        hr = api.get_heart_rates(TODAY)
+    except Exception as e:
+        out({"text": "\uf21e —", "tooltip": f"Garmin data failed: {e}"})
+
+    hr_values = hr.get("heartRateValues") or []
+    latest = latest_value(hr_values)
+    resting = hr.get("restingHeartRate")
+
+    current = latest[1] if latest else None
+    freshness = minutes_ago(latest[0]) if latest else "no data"
+
+    lines = []
+    if current:
+        lines.append(f"Heart rate: {current} bpm ({freshness})")
+    if resting:
+        lines.append(f"Resting: {resting} bpm")
+
+    try:
+        stress_data = api.get_all_day_stress(TODAY)
+        bb = latest_value(stress_data.get("bodyBatteryValuesArray") or [], index=2)
+        st = latest_value(stress_data.get("stressValuesArray") or [])
+        if bb:
+            lines.append(f"Body battery: {bb[1]}")
+        if st:
+            lines.append(f"Stress: {st[1]}")
+    except Exception:
+        pass
+
+    try:
+        steps_data = api.get_daily_steps(TODAY, TODAY)
+        if isinstance(steps_data, list) and steps_data:
+            lines.append(f"Steps: {steps_data[0].get('totalSteps')}")
+    except Exception:
+        pass
+
+    text = f"\uf21e {current if current else '—'}"
+    out({"text": text, "tooltip": "\n".join(lines) if lines else "No Garmin data"})
+
+
+if __name__ == "__main__":
+    main()

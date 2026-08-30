@@ -1,0 +1,12 @@
+[Unit]
+Description=Garmin health stats web app
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.venvs/garmin/bin/python %h/.config/garmin-health/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>garmin-stats</title>
+<style>
+  :root {
+    --bg: #040303;
+    --fg: #ffffff;
+    --muted: #7f6e6e;
+    --accent: #aaacac;
+    --red: #F82A2A;
+    --magenta: #f76e78;
+    --yellow: #fef348;
+    --glow: var(--muted);
+    --beat: 1s;
+    --ecg-h: 110px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding-bottom: calc(var(--ecg-h) + 32px);
+    gap: clamp(4px, 1.2vh, 16px);
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px);
+  }
+  .corner {
+    position: fixed; top: 18px; letter-spacing: 0.35em; font-size: 11px;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .corner.left  { left: 22px; }
+  .corner.right { right: 22px; color: var(--accent); }
+
+  .hud {
+    font-size: 13px; letter-spacing: 0.4em; color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .bpm {
+    font-size: 60px; font-weight: 700; letter-spacing: 0.05em;
+    color: var(--fg); text-shadow: 0 0 22px var(--glow), 0 0 60px var(--glow);
+  }
+  .unit { font-size: 14px; color: var(--muted); letter-spacing: 0.3em; margin-top: 2px; }
+
+  .heart-wrap {
+    position: relative;
+    width: 220px; height: 170px;
+    margin: 0;
+    overflow: visible;
+    flex-shrink: 0;
+  }
+  .pulse-ring {
+    position: absolute; inset: 0; margin: auto;
+    width: 100px; height: 100px; border-radius: 50%;
+    border: 1px solid var(--glow);
+    opacity: 0; pointer-events: none;
+    animation: ring var(--beat) ease-out infinite;
+    box-shadow: 0 0 24px var(--glow), inset 0 0 24px var(--glow);
+  }
+  .heart {
+    position: absolute; inset: 0; margin: auto;
+    width: 120px; height: 108px;
+    fill: none; stroke: var(--glow); stroke-width: 5;
+    transform-box: fill-box; transform-origin: center;
+    filter: drop-shadow(0 0 14px var(--glow)) drop-shadow(0 0 44px var(--glow));
+    animation: beat var(--beat) ease-in-out infinite;
+  }
+  @keyframes beat {
+    0%   { transform: scale(1); }
+    14%  { transform: scale(1.14); }
+    30%  { transform: scale(1); }
+    100% { transform: scale(1); }
+  }
+  @keyframes ring {
+    0%   { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(2.1); opacity: 0; }
+  }
+
+  .trace-sweep {
+    position: absolute; left: 50%; top: 50%;
+    width: 200px; height: 80px;
+    transform: translate(-50%, -50%);
+    overflow: visible; pointer-events: none;
+  }
+  .sweep-svg { display: block; width: 200px; height: 80px; overflow: visible; }
+  .sweep-path {
+    fill: none; stroke: var(--glow); stroke-width: 2.4;
+    stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 6px var(--glow)) drop-shadow(0 0 16px var(--glow));
+    stroke-dasharray: var(--sweep-len, 400);
+    stroke-dashoffset: var(--sweep-len, 400);
+    animation: drawSweep calc(var(--beat) * 2) linear infinite;
+  }
+  @keyframes drawSweep {
+    0%   { stroke-dashoffset: var(--sweep-len, 400); opacity: 1; }
+    45%  { stroke-dashoffset: 0; opacity: 1; }
+    58%  { stroke-dashoffset: 0; opacity: 1; }
+    72%  { stroke-dashoffset: 0; opacity: 0; }
+    100% { stroke-dashoffset: var(--sweep-len, 400); opacity: 0; }
+  }
+
+  .state {
+    font-size: 11px; letter-spacing: 0.3em; color: var(--muted);
+    text-transform: uppercase; margin: 0;
+  }
+  .state.ok   { color: var(--accent); }
+  .state.err  { color: var(--red); }
+  .state.sync { color: var(--glow); }
+
+  .tiles {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    width: min(700px, 92vw); align-items: stretch;
+    flex-shrink: 0;
+  }
+  .tile {
+    display: grid;
+    grid-template-rows: 14px 28px 14px 5px;
+    row-gap: 6px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(127,110,110,0.35);
+    border-top: 1px solid rgba(127,110,110,0.7);
+    padding: 12px 14px 10px;
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6);
+  }
+  .tile .label {
+    font-size: 10px; letter-spacing: 0.3em; color: var(--muted);
+    text-transform: uppercase; line-height: 14px;
+  }
+  .tile .value {
+    font-size: 22px; line-height: 28px; color: var(--fg);
+    text-shadow: 0 0 14px var(--glow);
+  }
+  .tile .sub {
+    font-size: 10px; line-height: 14px; color: var(--muted);
+    letter-spacing: 0.15em; min-height: 14px;
+  }
+  .bar {
+    height: 5px; margin-top: 0; background: rgba(127,110,110,0.15);
+    border-radius: 2px; overflow: hidden;
+  }
+  .bar.ghost { visibility: hidden; }
+  .bar > i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--glow), var(--magenta));
+    box-shadow: 0 0 10px var(--glow);
+    transition: width 0.6s ease;
+  }
+
+  .rhythm {
+    position: fixed; bottom: 0; left: 0;
+    width: 100vw; overflow: hidden; text-align: center;
+  }
+  .rhythm .label {
+    font-size: 10px; letter-spacing: 0.35em; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .ecg-svg {
+    display: block; height: var(--ecg-h); width: var(--ecg-w, 2000px);
+    background:
+      linear-gradient(rgba(250,42,42,0.05), rgba(0,0,0,0)) top/100% 38%,
+      linear-gradient(rgba(0,0,0,0), rgba(250,42,42,0.05)) bottom/100% 38%;
+  }
+  .ecg-trace {
+    fill: none; stroke: var(--glow); stroke-width: 2.5;
+    stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 6px var(--glow)) drop-shadow(0 0 22px var(--glow));
+    animation: ecg var(--ecg, 3s) linear infinite;
+  }
+  @keyframes ecg {
+    from { transform: translateX(0); }
+    to   { transform: translateX(var(--ecg-hw, -900px)); }
+  }
+
+  @media (max-width: 720px) {
+    .tiles { grid-template-columns: repeat(2, 1fr); width: min(420px, 92vw); }
+  }
+  @media (max-height: 640px) {
+    :root { --ecg-h: 72px; }
+    .unit { display: none; }
+  }
+  @media (max-height: 520px) {
+    :root { --ecg-h: 52px; }
+    .bpm { font-size: 42px; }
+    .heart-wrap { width: 160px; height: 124px; }
+    .heart { width: 88px; height: 80px; }
+    .pulse-ring { width: 72px; height: 72px; }
+    .trace-sweep, .sweep-svg { width: 148px; height: 58px; }
+    .hud { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+  <div class="corner left">BIO // MONITOR</div>
+  <div class="corner right">CPUNK</div>
+
+  <div class="hud">HR // SIGNAL</div>
+  <div class="bpm" id="bpm">--</div>
+  <div class="unit">B E A T S &nbsp; P E R &nbsp; M I N</div>
+
+  <div class="heart-wrap">
+    <div class="pulse-ring" id="ring"></div>
+    <svg class="heart" id="heart" viewBox="0 0 100 100">
+      <path d="M50 24 L42 14 L30 12 L20 14 L13 20 L9 28 L7 37 L8 46 L12 53 L18 59 L26 65 L36 73 L46 82 L50 87 L54 82 L64 73 L74 65 L82 59 L88 53 L92 46 L93 37 L91 28 L87 20 L80 14 L70 12 L58 14 Z"/>
+    </svg>
+    <div class="trace-sweep">
+      <svg class="sweep-svg" viewBox="0 0 200 80" overflow="visible">
+        <g transform="translate(0,40)">
+          <path class="sweep-path" id="sweeppath" d=""/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="state sync" id="state">NO SIGNAL</div>
+
+  <div class="tiles">
+    <div class="tile">
+      <div class="label">Resting</div>
+      <div class="value" id="resting">--</div>
+      <div class="sub">BPM</div>
+      <div class="bar ghost"><i></i></div>
+    </div>
+    <div class="tile">
+      <div class="label">Body Battery</div>
+      <div class="value" id="bb">--</div>
+      <div class="sub">&nbsp;</div>
+      <div class="bar"><i id="bbbar"></i></div>
+    </div>
+    <div class="tile">
+      <div class="label">Stress</div>
+      <div class="value" id="stress">--</div>
+      <div class="sub">&nbsp;</div>
+      <div class="bar"><i id="stressbar"></i></div>
+    </div>
+    <div class="tile">
+      <div class="label">Steps</div>
+      <div class="value" id="steps">--</div>
+      <div class="sub"><span id="goal">--</span> GOAL</div>
+      <div class="bar"><i id="stepsbar"></i></div>
+    </div>
+  </div>
+
+  <div class="rhythm">
+    <div class="label">Rhythm // Trace</div>
+    <svg class="ecg-svg" id="ecg" viewBox="0 0 2000 110">
+      <g transform="translate(0,55)">
+        <path class="ecg-trace" id="ecgpath" d=""/>
+      </g>
+    </svg>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function zone(bpm) {
+    if (bpm === null || bpm === undefined || bpm === 0) return { c: "var(--muted)" };
+    if (bpm < 60)  return { c: "#6bf7ff" };   // cool
+    if (bpm < 100) return { c: "var(--yellow)" };
+    if (bpm < 130) return { c: "var(--magenta)" };
+    return { c: "var(--red)" };
+  }
+
+  function fmtAge(m) {
+    if (m === null || m === undefined) return "--";
+    if (m < 1) return "<1m ago";
+    if (m < 90) return m + "m ago";
+    return (m / 60).toFixed(1) + "h ago";
+  }
+
+  let ECG_COPIES = 20;
+
+  function complexPath(ox, cw, h) {
+    return (
+      `M ${ox} 0 Q ${ox + cw*0.06} 0 ${ox + cw*0.13} ${-0.30*h}` +
+      ` Q ${ox + cw*0.20} ${-0.60*h} ${ox + cw*0.225} 0` +
+      ` L ${ox + cw*0.30} 0 L ${ox + cw*0.34} ${-0.30*h}` +
+      ` L ${ox + cw*0.385} ${1.6*h} L ${ox + cw*0.43} ${-0.45*h}` +
+      ` L ${ox + cw*0.475} 0 L ${ox + cw*0.50} ${0.06*h}` +
+      ` Q ${ox + cw*0.60} ${0.95*h} ${ox + cw*0.70} ${0.10*h}` +
+      ` Q ${ox + cw*0.77} ${-0.05*h} ${ox + cw*0.83} 0 L ${ox + cw} 0`
+    );
+  }
+
+  function buildEcg() {
+    const cw = 90, h = 26;
+    const vw = window.innerWidth;
+    const perCopy = Math.ceil(vw / cw) + 1;
+    const total = perCopy * 2;
+    const W = total * cw;
+    const parts = [];
+    for (let c = 0; c < total; c++) parts.push(complexPath(c * cw, cw, h));
+    $("ecgpath").setAttribute("d", parts.join(" "));
+    $("ecg").setAttribute("viewBox", `0 0 ${W} 110`);
+    const sweep = $("sweeppath");
+    sweep.setAttribute("d", complexPath(8, 184, 22));
+    const len = Math.ceil(sweep.getTotalLength());
+    const root = document.documentElement;
+    root.style.setProperty("--sweep-len", len);
+    root.style.setProperty("--ecg-w", W + "px");
+    root.style.setProperty("--ecg-hw", (-W / 2) + "px");
+    ECG_COPIES = perCopy;
+    return perCopy;
+  }
+
+  buildEcg();
+  window.addEventListener("resize", buildEcg);
+
+  async function tick() {
+    let d = null, err = null;
+    try {
+      const r = await fetch("/api/health");
+      const s = await r.json();
+      d = s.data;
+      err = s.error;
+    } catch (e) {
+      err = String(e);
+    }
+
+    const st = $("state");
+    if (d && d.heart_rate !== null && d.heart_rate !== undefined) {
+      const bpm = d.heart_rate;
+      const z = zone(bpm);
+      const beat = 60 / bpm;
+      document.documentElement.style.setProperty("--glow", z.c);
+      document.documentElement.style.setProperty("--beat", beat + "s");
+      document.documentElement.style.setProperty("--ecg", (ECG_COPIES * beat) + "s");
+      $("bpm").textContent = bpm;
+
+      $("resting").textContent = d.resting_hr ?? "--";
+      $("bb").textContent = d.body_battery ?? "--";
+      $("bbbar").style.width = (d.body_battery ?? 0) + "%";
+      $("stress").textContent = d.stress ?? "--";
+      $("stressbar").style.width = (d.stress ?? 0) + "%";
+      $("steps").textContent = d.steps ?? "--";
+      $("goal").textContent = d.step_goal ?? "--";
+      const pct = d.step_goal ? Math.min(100, (d.steps / d.step_goal) * 100) : 0;
+      $("stepsbar").style.width = pct + "%";
+
+      st.textContent = "SYNC " + fmtAge(d.fresh_minutes);
+      st.className = "state sync";
+    } else {
+      document.documentElement.style.setProperty("--glow", "var(--muted)");
+      document.documentElement.style.setProperty("--ecg", "99999s");
+      document.documentElement.style.setProperty("--beat", "1.5s");
+      $("bpm").textContent = "--";
+      st.textContent = err ? ("NO SIGNAL // " + err) : "NO SIGNAL";
+      st.className = "state err";
+    }
+  }
+
+  tick();
+  setInterval(tick, 5000);
+</script>
+</body>
+</html>

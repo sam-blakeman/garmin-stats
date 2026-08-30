@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+import getpass
+import os
+import sys
+
+from garminconnect import Garmin
+
+TOKENS = os.path.expanduser("~/.config/garmin-health/tokens")
+
+
+def main() -> None:
+    email = input("Garmin email: ").strip()
+    if not email:
+        sys.exit("no email given")
+    password = getpass.getpass("Garmin password: ")
+
+    os.makedirs(os.path.dirname(TOKENS), exist_ok=True)
+
+    api = Garmin(email, password, return_on_mfa=True)
+    needs_mfa, _ = api.login(tokenstore=TOKENS)
+
+    if needs_mfa:
+        code = input("MFA code from Garmin (SMS or authenticator app): ").strip()
+        api.resume_login(needs_mfa, code)
+
+    api.client.dump(TOKENS)
+    print(f"Login OK. Tokens stored at {TOKENS}")
+    print("Test the bar reader with: garmin-health")
+
+
+if __name__ == "__main__":
+    main()
