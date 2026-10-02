@@ -221,15 +221,11 @@
       linear-gradient(color-mix(in srgb, var(--red) 8%, transparent), transparent) top/100% 38%,
       linear-gradient(transparent, color-mix(in srgb, var(--red) 8%, transparent)) bottom/100% 38%;
   }
+  .ecg-track { width: var(--ecg-w, 2000px); will-change: transform; }
   .ecg-trace {
     fill: none; stroke: var(--glow); stroke-width: 2.5;
     stroke-linecap: round; stroke-linejoin: round;
     filter: drop-shadow(0 0 6px var(--glow)) drop-shadow(0 0 22px var(--glow));
-    animation: ecg var(--ecg, 3s) linear infinite;
-  }
-  @keyframes ecg {
-    from { transform: translateX(0); }
-    to   { transform: translateX(var(--ecg-hw, -900px)); }
   }
 
   @media (max-width: 720px) {
@@ -252,7 +248,7 @@
     .hud { font-size: 11px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .heart, .pulse-ring, .sweep-path, .ecg-trace { animation: none; }
+    .heart, .pulse-ring, .sweep-path { animation: none; }
     .sweep-path { stroke-dashoffset: 0; }
   }
 </style>
@@ -319,11 +315,13 @@
 
   <div class="rhythm">
     <div class="label">Rhythm // Trace</div>
-    <svg class="ecg-svg" id="ecg" viewBox="0 0 2000 110">
-      <g transform="translate(0,55)">
-        <path class="ecg-trace" id="ecgpath" d=""/>
-      </g>
-    </svg>
+    <div class="ecg-track" id="ecgtrack">
+      <svg class="ecg-svg" id="ecg" viewBox="0 0 2000 110">
+        <g transform="translate(0,55)">
+          <path class="ecg-trace" id="ecgpath" d=""/>
+        </g>
+      </svg>
+    </div>
   </div>
 
 <script>
@@ -334,7 +332,8 @@
   let lastTheme = "";
   let last = null;      // last /api/health payload with data
   let beat = 1.5;
-  let ECG_COPIES = 20;
+  let ecgAnim = null;
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
   function applyTheme(t) {
     if (!t) return;
@@ -412,10 +411,19 @@
     );
   }
 
+  // The strip slides one complex per second at playbackRate 1, so the
+  // heart rate maps straight onto playbackRate. updatePlaybackRate keeps the
+  // current position, so rate changes never make the trace jump.
   function setRate(b, running) {
-    beat = b;
     root.style.setProperty("--beat", b + "s");
-    root.style.setProperty("--ecg", running ? (ECG_COPIES * b) + "s" : "99999s");
+    beat = b;
+    if (!ecgAnim) return;
+    if (running && !reduceMotion.matches) {
+      if (ecgAnim.playbackRate !== 1 / b) ecgAnim.updatePlaybackRate(1 / b);
+      if (ecgAnim.playState !== "running") ecgAnim.play();
+    } else if (ecgAnim.playState === "running") {
+      ecgAnim.pause();
+    }
   }
 
   function buildEcg() {
@@ -436,9 +444,21 @@
     sweep.setAttribute("d", complexPath(8, 184, 22));
     root.style.setProperty("--sweep-len", Math.ceil(sweep.getTotalLength()));
     root.style.setProperty("--ecg-w", W + "px");
-    root.style.setProperty("--ecg-hw", (-W / 2) + "px");
-    ECG_COPIES = perCopy;
-    setRate(beat, !!last);
+
+    // Rebuild the loop for the new width, carrying over how far through it we were.
+    const progress = ecgAnim
+      ? (ecgAnim.currentTime % ecgAnim.effect.getTiming().duration) / ecgAnim.effect.getTiming().duration
+      : 0;
+    ecgAnim?.cancel();
+    const duration = perCopy * 1000;
+    ecgAnim = $("ecgtrack").animate(
+      [{ transform: "translateX(0)" }, { transform: `translateX(${-W / 2}px)` }],
+      { duration, iterations: Infinity, easing: "linear" },
+    );
+    ecgAnim.currentTime = progress * duration;
+    ecgAnim.playbackRate = 1 / beat;
+    ecgAnim.pause();
+    setRate(beat, !!last && !document.body.classList.contains("nosignal"));
     drawChart();
   }
 
@@ -536,7 +556,8 @@
     const st = $("state");
     if (!d || d.heart_rate === null || d.heart_rate === undefined) {
       root.style.setProperty("--glow", "var(--muted)");
-      setRate(1.5, false);
+      document.body.classList.add("nosignal");
+      setRate(beat, false);
       $("bpm").textContent = "--";
       st.textContent = err ? ("NO SIGNAL // " + err) : "NO SIGNAL";
       st.title = err || "";
@@ -548,6 +569,7 @@
     const age = ageMin(d);
     const stale = !!err || (age !== null && age > STALE_MIN);
     document.body.classList.toggle("stale", stale);
+    document.body.classList.remove("nosignal");
     root.style.setProperty("--glow", "var(--accent)");
     setRate(60 / d.heart_rate, true);
     $("bpm").textContent = d.heart_rate;
@@ -605,9 +627,11 @@
     if (changed) drawChart();
   }
 
+  reduceMotion.addEventListener("change", () => setRate(beat, !!last && !document.body.classList.contains("nosignal")));
   let resizeT;
   window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(buildEcg, 120); });
   buildEcg();
+  setRate(beat, false);
   loadTheme();
   tick();
   setInterval(loadTheme, 2000);
