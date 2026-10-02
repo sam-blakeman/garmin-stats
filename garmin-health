@@ -1,33 +1,21 @@
 #!/usr/bin/env python3
+"""Waybar/Omarchy bar JSON for Garmin health.
+
+Reads the running garmin-stats server first so the bar and the HUD share one
+Garmin poll; falls back to hitting Garmin Connect directly if it's down.
+"""
 import json
 import os
 import sys
-from datetime import datetime
+import time
+import urllib.request
 
-from garminconnect import Garmin
-
-TOKENS = os.path.expanduser("~/.config/garmin-health/tokens")
-TODAY = datetime.now().strftime("%Y-%m-%d")
-
-
-def latest_value(values, index=1):
-    if not values:
-        return None
-    for row in reversed(values):
-        if not isinstance(row, (list, tuple)) or len(row) <= index:
-            continue
-        val = row[index]
-        if val:
-            return row[0], val
-    return None
-
-
-def minutes_ago(ts):
-    if not ts:
-        return "?"
-    ts = ts / 1000 if ts > 1e11 else ts
-    age = (datetime.now().timestamp() - ts) / 60
-    return f"{int(age)}m ago" if age < 90 else f"{age / 60:.1f}h ago"
+APP_DIR = os.path.expanduser("~/.config/garmin-health")
+SERVER = os.environ.get(
+    "GARMIN_STATS_URL",
+    f"http://127.0.0.1:{os.environ.get('GARMIN_STATS_PORT', 8765)}",
+)
+ICON = ""
 
 
 def out(payload):
@@ -35,51 +23,69 @@ def out(payload):
     sys.exit(0)
 
 
+def from_server():
+    try:
+        with urllib.request.urlopen(SERVER + "/api/health", timeout=2) as r:
+            state = json.load(r)
+    except Exception:
+        return None, None
+    return state.get("data"), state.get("error")
+
+
+def from_garmin():
+    sys.path.insert(0, APP_DIR)
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    try:
+        from garmin_data import fetch_stats
+
+        return fetch_stats(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def age(ts):
+    if not ts:
+        return "?"
+    m = (time.time() - ts) / 60
+    if m < 1:
+        return "just now"
+    return f"{int(m)}m ago" if m < 90 else f"{m / 60:.1f}h ago"
+
+
+def stress_band(v):
+    return "rest" if v <= 25 else "low" if v <= 50 else "medium" if v <= 75 else "high"
+
+
 def main() -> None:
-    api = Garmin("", "")
-    try:
-        api.login(tokenstore=TOKENS)
-    except Exception as e:
-        out({"text": "\uf21e —", "tooltip": f"Garmin auth failed: {e}"})
+    d, err = from_server()
+    if d is None:
+        d, err = from_garmin()
+    if not d:
+        out({"text": f"{ICON} —", "tooltip": f"Garmin: {err or 'no data'}", "class": "error"})
 
-    try:
-        hr = api.get_heart_rates(TODAY)
-    except Exception as e:
-        out({"text": "\uf21e —", "tooltip": f"Garmin data failed: {e}"})
-
-    hr_values = hr.get("heartRateValues") or []
-    latest = latest_value(hr_values)
-    resting = hr.get("restingHeartRate")
-
-    current = latest[1] if latest else None
-    freshness = minutes_ago(latest[0]) if latest else "no data"
-
+    hr = d.get("heart_rate")
     lines = []
-    if current:
-        lines.append(f"Heart rate: {current} bpm ({freshness})")
-    if resting:
-        lines.append(f"Resting: {resting} bpm")
+    if hr:
+        lines.append(f"Heart rate: {hr} bpm ({age(d.get('hr_ts'))})")
+    if d.get("resting_hr"):
+        lines.append(f"Resting: {d['resting_hr']} bpm")
+    if d.get("hr_min") and d.get("hr_max"):
+        lines.append(f"Range today: {d['hr_min']}–{d['hr_max']} bpm")
+    if d.get("body_battery") is not None:
+        lines.append(f"Body battery: {d['body_battery']}")
+    if d.get("stress") is not None:
+        lines.append(f"Stress: {d['stress']} ({stress_band(d['stress'])})")
+    if d.get("steps") is not None:
+        goal = d.get("step_goal")
+        lines.append(f"Steps: {d['steps']:,}" + (f" / {goal:,}" if goal else ""))
+    if err:
+        lines.append(f"⚠ last refresh failed: {err}")
 
-    try:
-        stress_data = api.get_all_day_stress(TODAY)
-        bb = latest_value(stress_data.get("bodyBatteryValuesArray") or [], index=2)
-        st = latest_value(stress_data.get("stressValuesArray") or [])
-        if bb:
-            lines.append(f"Body battery: {bb[1]}")
-        if st:
-            lines.append(f"Stress: {st[1]}")
-    except Exception:
-        pass
-
-    try:
-        steps_data = api.get_daily_steps(TODAY, TODAY)
-        if isinstance(steps_data, list) and steps_data:
-            lines.append(f"Steps: {steps_data[0].get('totalSteps')}")
-    except Exception:
-        pass
-
-    text = f"\uf21e {current if current else '—'}"
-    out({"text": text, "tooltip": "\n".join(lines) if lines else "No Garmin data"})
+    out({
+        "text": f"{ICON} {hr if hr else '—'}",
+        "tooltip": "\n".join(lines) if lines else "No Garmin data",
+        "class": "stale" if err else "ok",
+    })
 
 
 if __name__ == "__main__":

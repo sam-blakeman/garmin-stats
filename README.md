@@ -80,3 +80,7 @@ omarchy webapp install garmin-stats http://localhost:8765 webapp/heart.png
 - Garmin Connect unofficial API is rate-limited; 5-minute polling is safe
 - First login may hit 429 on mobile endpoints; MFA still works
 - Tokens are Garmin session credentials — keep `tokens` out of git
+- `garmin-health` reads the running server's `/api/health` first, so the bar and HUD share one Garmin poll; it only logs in to Garmin itself if the server is down (needs `garmin_data.py` in `~/.config/garmin-health/`)
+- Stress readings of -1/-2 (Garmin's "not measured"/"activity" sentinels) are ignored
+- Shortly after midnight, before the watch has synced, the HUD shows yesterday's data
+- Env overrides for `server.py`: `GARMIN_STATS_PORT` (default 8765), `GARMIN_STATS_INTERVAL` seconds (default 300); `garmin-health` honours `GARMIN_STATS_PORT` / `GARMIN_STATS_URL`

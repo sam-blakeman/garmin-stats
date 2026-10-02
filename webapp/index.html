@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>garmin-stats</title>
+<link rel="icon" href="heart.svg" type="image/svg+xml">
 <style>
   :root {
     --bg: #040303;
@@ -12,7 +14,8 @@
     --red: #F82A2A;
     --magenta: #f76e78;
     --yellow: #fef348;
-    --glow: var(--muted);
+    --cyan: #6bf7ff;
+    --glow: var(--accent);
     --beat: 1s;
     --ecg-h: 110px;
   }
@@ -35,8 +38,8 @@
   body::before {
     content: ""; position: fixed; inset: 0; pointer-events: none;
     background-image:
-      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      linear-gradient(color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px);
     background-size: 44px 44px;
   }
   body::after {
@@ -58,7 +61,7 @@
     font-size: 60px; font-weight: 700; letter-spacing: 0.05em;
     color: var(--fg); text-shadow: 0 0 22px var(--glow), 0 0 60px var(--glow);
   }
-  .unit { font-size: 14px; color: var(--muted); letter-spacing: 0.3em; margin-top: 2px; }
+  .unit { font-size: 14px; color: var(--muted); letter-spacing: 0.6em; margin-top: 2px; margin-right: -0.6em; }
 
   .heart-wrap {
     position: relative;
@@ -124,6 +127,9 @@
   .state.ok   { color: var(--accent); }
   .state.err  { color: var(--red); }
   .state.sync { color: var(--glow); }
+  .state.stale { color: var(--yellow); }
+  .delta { color: var(--muted); }
+  body.stale .heart, body.stale .pulse-ring, body.stale .sweep-path, body.stale .ecg-trace { opacity: 0.45; }
 
   .tiles {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
@@ -134,9 +140,9 @@
     display: grid;
     grid-template-rows: 14px 28px 14px 5px;
     row-gap: 6px;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(127,110,110,0.35);
-    border-top: 1px solid rgba(127,110,110,0.7);
+    background: color-mix(in srgb, var(--fg) 3%, transparent);
+    border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--muted) 70%, transparent);
     padding: 12px 14px 10px;
     box-shadow: inset 0 0 30px rgba(0,0,0,0.6);
   }
@@ -147,21 +153,58 @@
   .tile .value {
     font-size: 22px; line-height: 28px; color: var(--fg);
     text-shadow: 0 0 14px var(--glow);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
   }
+  .tile .value small { font-size: 12px; color: var(--muted); text-shadow: none; margin-left: 4px; }
   .tile .sub {
     font-size: 10px; line-height: 14px; color: var(--muted);
-    letter-spacing: 0.15em; min-height: 14px;
+    letter-spacing: 0.15em; min-height: 14px; text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile .sub b { font-weight: 400; color: var(--bar-c, var(--muted)); }
+
+  .today {
+    width: min(700px, 92vw); flex-shrink: 0; position: relative;
+    border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+    background: color-mix(in srgb, var(--fg) 2%, transparent);
+    padding: 8px 14px 6px;
+  }
+  .today .head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10px; letter-spacing: 0.3em; color: var(--muted); text-transform: uppercase;
+  }
+  .today .head span:last-child { letter-spacing: 0.15em; }
+  .today .head b { font-weight: 400; color: var(--fg); }
+  .hrchart { display: block; width: 100%; height: 64px; margin-top: 6px; overflow: visible; }
+  .hrchart .grid { stroke: color-mix(in srgb, var(--muted) 25%, transparent); stroke-width: 1; }
+  .hrchart .rest { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; }
+  .hrchart .area { fill: color-mix(in srgb, var(--glow) 14%, transparent); }
+  .hrchart .line {
+    fill: none; stroke: var(--glow); stroke-width: 2;
+    stroke-linejoin: round; stroke-linecap: round;
+    filter: drop-shadow(0 0 4px var(--glow));
+  }
+  .hrchart .now { fill: var(--glow); stroke: var(--bg); stroke-width: 2; }
+  .hrchart .cross { stroke: var(--fg); stroke-width: 1; opacity: 0.5; }
+  .hrchart .cross-dot { fill: var(--fg); stroke: var(--bg); stroke-width: 2; }
+  .hrchart text { fill: var(--muted); font-size: 9px; letter-spacing: 0.1em; font-family: inherit; }
+  .tip {
+    position: absolute; pointer-events: none; transform: translate(-50%, -100%);
+    font-size: 10px; letter-spacing: 0.15em; color: var(--fg); white-space: nowrap;
+    background: var(--bg); border: 1px solid color-mix(in srgb, var(--muted) 60%, transparent);
+    padding: 3px 6px; opacity: 0; transition: opacity 0.1s;
   }
   .bar {
-    height: 5px; margin-top: 0; background: rgba(127,110,110,0.15);
+    height: 5px; margin-top: 0; background: color-mix(in srgb, var(--muted) 15%, transparent);
     border-radius: 2px; overflow: hidden;
   }
   .bar.ghost { visibility: hidden; }
   .bar > i {
     display: block; height: 100%; width: 0%;
-    background: linear-gradient(90deg, var(--glow), var(--magenta));
-    box-shadow: 0 0 10px var(--glow);
-    transition: width 0.6s ease;
+    --bar: var(--glow);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--bar) 55%, transparent), var(--bar));
+    box-shadow: 0 0 10px var(--bar);
+    transition: width 0.6s ease, background 0.6s ease;
   }
 
   .rhythm {
@@ -175,8 +218,8 @@
   .ecg-svg {
     display: block; height: var(--ecg-h); width: var(--ecg-w, 2000px);
     background:
-      linear-gradient(rgba(250,42,42,0.05), rgba(0,0,0,0)) top/100% 38%,
-      linear-gradient(rgba(0,0,0,0), rgba(250,42,42,0.05)) bottom/100% 38%;
+      linear-gradient(color-mix(in srgb, var(--red) 8%, transparent), transparent) top/100% 38%,
+      linear-gradient(transparent, color-mix(in srgb, var(--red) 8%, transparent)) bottom/100% 38%;
   }
   .ecg-trace {
     fill: none; stroke: var(--glow); stroke-width: 2.5;
@@ -192,6 +235,9 @@
   @media (max-width: 720px) {
     .tiles { grid-template-columns: repeat(2, 1fr); width: min(420px, 92vw); }
   }
+  @media (max-height: 820px) {
+    .today { display: none; }
+  }
   @media (max-height: 640px) {
     :root { --ecg-h: 72px; }
     .unit { display: none; }
@@ -205,15 +251,19 @@
     .trace-sweep, .sweep-svg { width: 148px; height: 58px; }
     .hud { font-size: 11px; }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .heart, .pulse-ring, .sweep-path, .ecg-trace { animation: none; }
+    .sweep-path { stroke-dashoffset: 0; }
+  }
 </style>
 </head>
 <body>
   <div class="corner left">BIO // MONITOR</div>
-  <div class="corner right">CPUNK</div>
+  <div class="corner right" id="themename">CPUNK</div>
 
   <div class="hud">HR // SIGNAL</div>
   <div class="bpm" id="bpm">--</div>
-  <div class="unit">B E A T S &nbsp; P E R &nbsp; M I N</div>
+  <div class="unit">BEATS PER MIN</div>
 
   <div class="heart-wrap">
     <div class="pulse-ring" id="ring"></div>
@@ -234,28 +284,37 @@
   <div class="tiles">
     <div class="tile">
       <div class="label">Resting</div>
-      <div class="value" id="resting">--</div>
-      <div class="sub">BPM</div>
+      <div class="value"><span id="resting">--</span><small>BPM</small></div>
+      <div class="sub" id="restingsub">&nbsp;</div>
       <div class="bar ghost"><i></i></div>
     </div>
-    <div class="tile">
+    <div class="tile" id="bbtile">
       <div class="label">Body Battery</div>
       <div class="value" id="bb">--</div>
-      <div class="sub">&nbsp;</div>
+      <div class="sub" id="bbsub">&nbsp;</div>
       <div class="bar"><i id="bbbar"></i></div>
     </div>
-    <div class="tile">
+    <div class="tile" id="stresstile">
       <div class="label">Stress</div>
       <div class="value" id="stress">--</div>
-      <div class="sub">&nbsp;</div>
+      <div class="sub" id="stresssub">&nbsp;</div>
       <div class="bar"><i id="stressbar"></i></div>
     </div>
-    <div class="tile">
+    <div class="tile" id="stepstile">
       <div class="label">Steps</div>
       <div class="value" id="steps">--</div>
-      <div class="sub"><span id="goal">--</span> GOAL</div>
+      <div class="sub" id="stepssub">&nbsp;</div>
       <div class="bar"><i id="stepsbar"></i></div>
     </div>
+  </div>
+
+  <div class="today" id="today">
+    <div class="head">
+      <span id="todaylabel">HR // Today</span>
+      <span>Min <b id="hrmin">--</b> &nbsp; Max <b id="hrmax">--</b></span>
+    </div>
+    <svg class="hrchart" id="hrchart" aria-label="Heart rate today"></svg>
+    <div class="tip" id="tip"></div>
   </div>
 
   <div class="rhythm">
@@ -270,22 +329,76 @@
 <script>
   const $ = (id) => document.getElementById(id);
 
-  function zone(bpm) {
-    if (bpm === null || bpm === undefined || bpm === 0) return { c: "var(--muted)" };
-    if (bpm < 60)  return { c: "#6bf7ff" };   // cool
-    if (bpm < 100) return { c: "var(--yellow)" };
-    if (bpm < 130) return { c: "var(--magenta)" };
-    return { c: "var(--red)" };
+  const root = document.documentElement;
+  const STALE_MIN = 30;
+  let lastTheme = "";
+  let last = null;      // last /api/health payload with data
+  let beat = 1.5;
+  let ECG_COPIES = 20;
+
+  function applyTheme(t) {
+    if (!t) return;
+    const map = [
+      ["bg", "--bg"], ["fg", "--fg"], ["muted", "--muted"],
+      ["accent", "--accent"], ["red", "--red"], ["magenta", "--magenta"],
+      ["yellow", "--yellow"], ["cyan", "--cyan"],
+    ];
+    for (const [key, css] of map) {
+      if (t[key]) root.style.setProperty(css, t[key]);
+    }
+    $("themename").textContent = (t.name || "cpunk").replace(/-/g, " ");
+  }
+
+  async function loadTheme() {
+    try {
+      const txt = await (await fetch("/api/theme")).text();
+      if (txt !== lastTheme) { lastTheme = txt; applyTheme(JSON.parse(txt)); }
+    } catch (e) {}
+  }
+
+  const nf = new Intl.NumberFormat();
+  const fmt = (v) => (v === null || v === undefined ? "--" : nf.format(v));
+
+  function ageMin(d) {
+    if (d.hr_ts) return Math.max(0, Math.floor((Date.now() / 1000 - d.hr_ts) / 60));
+    return d.fresh_minutes ?? null;
   }
 
   function fmtAge(m) {
     if (m === null || m === undefined) return "--";
-    if (m < 1) return "<1m ago";
+    if (m < 1) return "just now";
     if (m < 90) return m + "m ago";
     return (m / 60).toFixed(1) + "h ago";
   }
 
-  let ECG_COPIES = 20;
+  // Garmin's own bands.
+  function stressBand(v) {
+    if (v <= 25) return ["rest", "var(--cyan)"];
+    if (v <= 50) return ["low", "var(--accent)"];
+    if (v <= 75) return ["medium", "var(--yellow)"];
+    return ["high", "var(--red)"];
+  }
+  function batteryBand(v) {
+    if (v >= 75) return ["charged", "var(--accent)"];
+    if (v >= 50) return ["good", "var(--accent)"];
+    if (v >= 25) return ["draining", "var(--yellow)"];
+    return ["low", "var(--red)"];
+  }
+
+  function setBar(id, pct, color) {
+    const el = $(id);
+    el.style.width = Math.max(0, Math.min(100, pct || 0)) + "%";
+    el.style.setProperty("--bar", color || "var(--glow)");
+  }
+  function setSub(id, text, color) {
+    const el = $(id);
+    el.textContent = "";
+    if (!text) { el.innerHTML = "&nbsp;"; return; }
+    const b = document.createElement("b");
+    b.textContent = text;
+    if (color) b.style.color = color;
+    el.appendChild(b);
+  }
 
   function complexPath(ox, cw, h) {
     return (
@@ -299,74 +412,205 @@
     );
   }
 
+  function setRate(b, running) {
+    beat = b;
+    root.style.setProperty("--beat", b + "s");
+    root.style.setProperty("--ecg", running ? (ECG_COPIES * b) + "s" : "99999s");
+  }
+
   function buildEcg() {
-    const cw = 90, h = 26;
-    const vw = window.innerWidth;
-    const perCopy = Math.ceil(vw / cw) + 1;
+    const cw = 90;
+    // Match the viewBox to the rendered strip height so the trace isn't
+    // shrunk by preserveAspectRatio when --ecg-h changes.
+    const H = $("ecg").getBoundingClientRect().height || 110;
+    const h = H * 26 / 110;
+    const perCopy = Math.ceil(window.innerWidth / cw) + 1;
     const total = perCopy * 2;
     const W = total * cw;
     const parts = [];
     for (let c = 0; c < total; c++) parts.push(complexPath(c * cw, cw, h));
     $("ecgpath").setAttribute("d", parts.join(" "));
-    $("ecg").setAttribute("viewBox", `0 0 ${W} 110`);
+    $("ecgpath").parentNode.setAttribute("transform", `translate(0,${H * 0.4})`);
+    $("ecg").setAttribute("viewBox", `0 0 ${W} ${H}`);
     const sweep = $("sweeppath");
     sweep.setAttribute("d", complexPath(8, 184, 22));
-    const len = Math.ceil(sweep.getTotalLength());
-    const root = document.documentElement;
-    root.style.setProperty("--sweep-len", len);
+    root.style.setProperty("--sweep-len", Math.ceil(sweep.getTotalLength()));
     root.style.setProperty("--ecg-w", W + "px");
     root.style.setProperty("--ecg-hw", (-W / 2) + "px");
     ECG_COPIES = perCopy;
-    return perCopy;
+    setRate(beat, !!last);
+    drawChart();
   }
 
-  buildEcg();
-  window.addEventListener("resize", buildEcg);
+  // ---- today's HR chart -------------------------------------------------
+  const SVGNS = "http://www.w3.org/2000/svg";
+  let chartPts = [];
+
+  function svgEl(tag, attrs, parent) {
+    const el = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    parent.appendChild(el);
+    return el;
+  }
+
+  function drawChart() {
+    const svg = $("hrchart");
+    svg.textContent = "";
+    chartPts = [];
+    const d = last;
+    const series = d && d.hr_series;
+    const box = svg.getBoundingClientRect();
+    if (!series || series.length < 2 || !box.width) return;
+
+    const W = box.width, H = box.height, padB = 12;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const [y, m, dd] = (d.day || "").split("-").map(Number);
+    const t0 = new Date(y, m - 1, dd).getTime();
+    const t1 = t0 + 864e5;
+    const vals = series.map((p) => p[1]);
+    if (d.resting_hr) vals.push(d.resting_hr);
+    const lo = Math.min(...vals) - 5, hi = Math.max(...vals) + 5;
+    const x = (t) => ((t - t0) / (t1 - t0)) * W;
+    const yy = (v) => (H - padB) - ((v - lo) / (hi - lo)) * (H - padB - 4);
+
+    for (const hr of [0, 6, 12, 18, 24]) {
+      const gx = (hr / 24) * W;
+      svgEl("line", { class: "grid", x1: gx, x2: gx, y1: 0, y2: H - padB }, svg);
+      const t = svgEl("text", {
+        x: gx, y: H - 1,
+        "text-anchor": hr === 0 ? "start" : hr === 24 ? "end" : "middle",
+      }, svg);
+      t.textContent = String(hr).padStart(2, "0");
+    }
+    if (d.resting_hr) {
+      const ry = yy(d.resting_hr);
+      svgEl("line", { class: "rest", x1: 0, x2: W, y1: ry, y2: ry }, svg);
+      const t = svgEl("text", { x: W - 2, y: ry - 3, "text-anchor": "end" }, svg);
+      t.textContent = "RHR " + d.resting_hr;
+    }
+
+    chartPts = series.map(([t, v]) => ({ t, v, x: x(t), y: yy(v) }));
+    const line = chartPts.map((p, i) => (i ? "L" : "M") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+    const base = H - padB;
+    svgEl("path", {
+      class: "area",
+      d: `${line} L ${chartPts.at(-1).x.toFixed(1)} ${base} L ${chartPts[0].x.toFixed(1)} ${base} Z`,
+    }, svg);
+    svgEl("path", { class: "line", d: line }, svg);
+    const end = chartPts.at(-1);
+    svgEl("circle", { class: "now", cx: end.x, cy: end.y, r: 4 }, svg);
+
+    svgEl("line", { class: "cross", id: "cross", y1: 0, y2: base, visibility: "hidden" }, svg);
+    svgEl("circle", { class: "cross-dot", id: "crossdot", r: 4, visibility: "hidden" }, svg);
+  }
+
+  function hover(e) {
+    if (!chartPts.length) return;
+    const svg = $("hrchart");
+    const r = svg.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let p = chartPts[0];
+    for (const q of chartPts) if (Math.abs(q.x - mx) < Math.abs(p.x - mx)) p = q;
+    const cross = $("cross"), dot = $("crossdot"), tip = $("tip");
+    for (const [k, v] of [["x1", p.x], ["x2", p.x]]) cross.setAttribute(k, v);
+    cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+    dot.setAttribute("visibility", "visible");
+    const tm = new Date(p.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tip.textContent = `${tm}  ${p.v} BPM`;
+    const box = $("today").getBoundingClientRect();
+    tip.style.left = Math.max(40, Math.min(box.width - 40, r.left - box.left + p.x)) + "px";
+    tip.style.top = (r.top - box.top + p.y - 8) + "px";
+    tip.style.opacity = 1;
+  }
+  function unhover() {
+    $("tip").style.opacity = 0;
+    for (const id of ["cross", "crossdot"]) $(id)?.setAttribute("visibility", "hidden");
+  }
+  new ResizeObserver(() => drawChart()).observe($("hrchart"));
+  $("hrchart").addEventListener("pointermove", hover);
+  $("hrchart").addEventListener("pointerleave", unhover);
+
+  // ---- render -----------------------------------------------------------
+  function render(d, err) {
+    const st = $("state");
+    if (!d || d.heart_rate === null || d.heart_rate === undefined) {
+      root.style.setProperty("--glow", "var(--muted)");
+      setRate(1.5, false);
+      $("bpm").textContent = "--";
+      st.textContent = err ? ("NO SIGNAL // " + err) : "NO SIGNAL";
+      st.title = err || "";
+      st.className = "state err";
+      document.body.classList.remove("stale");
+      return;
+    }
+
+    const age = ageMin(d);
+    const stale = !!err || (age !== null && age > STALE_MIN);
+    document.body.classList.toggle("stale", stale);
+    root.style.setProperty("--glow", "var(--accent)");
+    setRate(60 / d.heart_rate, true);
+    $("bpm").textContent = d.heart_rate;
+
+    $("resting").textContent = fmt(d.resting_hr);
+    setSub("restingsub", d.resting_hr_7d ? "7d avg " + d.resting_hr_7d : "");
+
+    $("bb").textContent = fmt(d.body_battery);
+    if (d.body_battery !== null && d.body_battery !== undefined) {
+      const [label, c] = batteryBand(d.body_battery);
+      setBar("bbbar", d.body_battery, c); setSub("bbsub", label, c);
+    } else { setBar("bbbar", 0); setSub("bbsub", ""); }
+
+    $("stress").textContent = fmt(d.stress);
+    if (d.stress !== null && d.stress !== undefined) {
+      const [label, c] = stressBand(d.stress);
+      setBar("stressbar", d.stress, c); setSub("stresssub", label, c);
+    } else { setBar("stressbar", 0); setSub("stresssub", "not measured"); }
+
+    $("steps").textContent = fmt(d.steps);
+    if (d.step_goal) {
+      const pct = Math.round(((d.steps || 0) / d.step_goal) * 100);
+      const done = pct >= 100;
+      setBar("stepsbar", pct, done ? "var(--cyan)" : "var(--accent)");
+      setSub("stepssub", `${pct}% of ${fmt(d.step_goal)}`, done ? "var(--cyan)" : "");
+    } else { setBar("stepsbar", 0); setSub("stepssub", ""); }
+
+    const today = new Date();
+    const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    $("todaylabel").textContent = d.day && d.day !== isoToday ? "HR // Yesterday" : "HR // Today";
+    $("hrmin").textContent = fmt(d.hr_min);
+    $("hrmax").textContent = fmt(d.hr_max);
+
+    let txt = "SYNC " + fmtAge(age);
+    if (err) txt += " // REFRESH FAILED";
+    else if (stale) txt += " // STALE";
+    st.textContent = txt;
+    st.title = err || "";
+    st.className = "state " + (stale ? "stale" : "sync");
+  }
 
   async function tick() {
     let d = null, err = null;
     try {
-      const r = await fetch("/api/health");
-      const s = await r.json();
+      const s = await (await fetch("/api/health")).json();
       d = s.data;
       err = s.error;
     } catch (e) {
-      err = String(e);
+      err = "server unreachable";
+      d = last;  // keep showing what we had
     }
-
-    const st = $("state");
-    if (d && d.heart_rate !== null && d.heart_rate !== undefined) {
-      const bpm = d.heart_rate;
-      const z = zone(bpm);
-      const beat = 60 / bpm;
-      document.documentElement.style.setProperty("--glow", z.c);
-      document.documentElement.style.setProperty("--beat", beat + "s");
-      document.documentElement.style.setProperty("--ecg", (ECG_COPIES * beat) + "s");
-      $("bpm").textContent = bpm;
-
-      $("resting").textContent = d.resting_hr ?? "--";
-      $("bb").textContent = d.body_battery ?? "--";
-      $("bbbar").style.width = (d.body_battery ?? 0) + "%";
-      $("stress").textContent = d.stress ?? "--";
-      $("stressbar").style.width = (d.stress ?? 0) + "%";
-      $("steps").textContent = d.steps ?? "--";
-      $("goal").textContent = d.step_goal ?? "--";
-      const pct = d.step_goal ? Math.min(100, (d.steps / d.step_goal) * 100) : 0;
-      $("stepsbar").style.width = pct + "%";
-
-      st.textContent = "SYNC " + fmtAge(d.fresh_minutes);
-      st.className = "state sync";
-    } else {
-      document.documentElement.style.setProperty("--glow", "var(--muted)");
-      document.documentElement.style.setProperty("--ecg", "99999s");
-      document.documentElement.style.setProperty("--beat", "1.5s");
-      $("bpm").textContent = "--";
-      st.textContent = err ? ("NO SIGNAL // " + err) : "NO SIGNAL";
-      st.className = "state err";
-    }
+    const changed = JSON.stringify(d?.hr_series) !== JSON.stringify(last?.hr_series) || d?.day !== last?.day;
+    if (d) last = d;
+    render(d, err);
+    if (changed) drawChart();
   }
 
+  let resizeT;
+  window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(buildEcg, 120); });
+  buildEcg();
+  loadTheme();
   tick();
+  setInterval(loadTheme, 2000);
   setInterval(tick, 5000);
 </script>
 </body>
