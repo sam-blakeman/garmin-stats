@@ -32,6 +32,7 @@
     align-items: center;
     justify-content: center;
     position: relative;
+    padding-top: 40px; /* keep clear of the corner labels */
     padding-bottom: calc(var(--ecg-h) + 32px);
     gap: clamp(4px, 1.2vh, 16px);
   }
@@ -233,6 +234,9 @@
   }
   @media (max-height: 820px) {
     .today { display: none; }
+  }
+  @media (max-width: 720px) and (max-height: 780px) {
+    .unit { display: none; }
   }
   @media (max-height: 640px) {
     :root { --ecg-h: 72px; }
